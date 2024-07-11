@@ -95,7 +95,7 @@ for i in tqdm(range(gexpr_feature.shape[0])):
     tmp.append(pretrain_gene_x)
 print('tmp\n',tmp)
 
-
+#似乎把TS也遮盖删除了，需要debug
 def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     """
     对矩阵的每一行元素进行随机遮盖，并返回两个矩阵：一个是原始值和遮盖标记的矩阵，另一个是被遮盖后的矩阵。
@@ -121,8 +121,8 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     # 遍历每一行
     for i in range(matrix.shape[0]):
         # 分离非零元素和零元素
-        non_zero_indices = np.where(matrix[i, :] != 0)[0]
-        zero_indices = np.where(matrix[i, :] == 0)[0]
+        non_zero_indices = np.where(matrix[i, :-2] != 0)[0]
+        zero_indices = np.where(matrix[i, :-2] == 0)[0]
 
         # 计算非零元素和零元素的遮盖数量
         non_zero_mask_num = int(np.ceil(non_zero_indices.size * mask_ratio))
@@ -135,7 +135,7 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
         # 随机选择非零元素进行遮盖
         if non_zero_mask_num > 0:
             non_zero_mask_indices = np.random.choice(
-                non_zero_indices[:-2],
+                non_zero_indices,
                 non_zero_mask_num,
                 replace=False
             )
@@ -146,7 +146,7 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
         # 随机选择零元素进行遮盖
         if zero_mask_num > 0:
             zero_mask_indices = np.random.choice(
-                zero_indices[:-2],
+                zero_indices,
                 zero_mask_num,
                 replace=False
             )
@@ -222,8 +222,10 @@ token_emb = AutoDiscretizationEmbedding2(20, unmasked_only_matrix.shape[1],
 pos_emb = nn.Embedding(unmasked_only_matrix.shape[1]+1, 20)
 
 x = token_emb(torch.unsqueeze(torch.from_numpy(unmasked_only_matrix.astype(np.float32)), 2), output_weight = 0)
+#todo  encoder_position_gene_ids获取方式
 # 创建一个整数张量作为示例
 #encoder_position_gene_ids应该由mask函数得到，T、S没有gene embedding
+#也可能在load.py中
 encoder_position_gene_ids = np.ones_like(unmasked_only_matrix, dtype=np.int64)
 print(encoder_position_gene_ids)
 position_emb = pos_emb(torch.from_numpy(encoder_position_gene_ids))
