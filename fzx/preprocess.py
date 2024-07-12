@@ -6,7 +6,7 @@ from tqdm import tqdm
 from scModel import AutoDiscretizationEmbedding2
 from torch import nn
 
-T_threshold = 500
+T_threshold = 1000
 
 
 def Hierarchical_Bayesian_downsampling(matrix):
@@ -31,19 +31,24 @@ def Hierarchical_Bayesian_downsampling(matrix):
 
 # matrix = np.random.uniform(0, 400, size=(5, 6))
 
+matrix = [[  0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 221,   0,   0,   0,  0,   0],
+ [  0,   0,  51,   0,   0,   0,   0,   0,  60,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0,   0],
+ [  0,   0,   0,   0,  82,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 332,   0,   0, 12,   0],
+ [349, 321,   0,   0,   0,   0,   0, 231,   0,   0,   0,   0,   0, 338,   0,   0,   0,   0, 0,   0]]
+matrix = np.array(matrix)
 #----------------------- 生成测试矩阵----------------
-matrix = np.zeros((20, 20), dtype=int)
+# matrix = np.zeros((20, 20), dtype=int)
 
-# np.random.seed(0)  # 设置随机种子以获得可重复的结果
-for _ in range(40):
-    i, j = np.random.randint(0, 20, size=2)
-    matrix[i, j] = np.random.randint(10, 400)  # 随机选择一个1到9之间的整数
-print(matrix)
-#-------------------------------------------------
-t_marix,tlist,slist = Hierarchical_Bayesian_downsampling(matrix)
-print(t_marix)
-print(tlist)
-print(slist)
+# # np.random.seed(0)  # 设置随机种子以获得可重复的结果
+# for _ in range(40):
+#     i, j = np.random.randint(0, 20, size=2)
+#     matrix[i, j] = np.random.randint(10, 400)  # 随机选择一个1到9之间的整数
+# print(matrix)
+# #-------------------------------------------------
+# t_marix,tlist,slist = Hierarchical_Bayesian_downsampling(matrix)
+# print(t_marix)
+# print(tlist)
+# print(slist)
 
 #------------------------------------------------------
 #在经过下采样后，19,264 个基因会经过Library-size Normalization (除以细胞总 counts 数) 和 Log-Transformation。
@@ -77,25 +82,25 @@ def main_gene_selection(X_df, gene_list):
 #         t_marix, to_fill_columns,var = main_gene_selection(t_marix,gene_list)
 #         assert gexpr_feature.shape[1]>=19264
 
-adata = sc.AnnData(t_marix)
-sc.pp.normalize_total(adata)
-sc.pp.log1p(adata)
-gexpr_feature = pd.DataFrame(adata.X,index=adata.obs_names,columns=adata.var_names)
-print('gexpr_feature\n',gexpr_feature)
-tmp = []
-for i in tqdm(range(gexpr_feature.shape[0])):
-    # 用totalcount = gexpr_feature.iloc[i,:].sum()计算T，无法计算S
-    # 直接对T、S进行log变换，不确定是否能准确表示表达量
-    # 暂时直接用log(1+x)
-    totalcount = np.log1p(tlist[i])
-    sourcecount = np.log1p(slist[i])
-    tmpdata = (gexpr_feature.iloc[i,:]).tolist()
-    pretrain_gene_x = torch.tensor(tmpdata+[totalcount,sourcecount]).unsqueeze(0)
-    # data_gene_ids = torch.arange(gexpr_feature.shape[1]+2, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
-    tmp.append(pretrain_gene_x)
-print('tmp\n',tmp)
+# adata = sc.AnnData(t_marix)
+# sc.pp.normalize_total(adata)
+# sc.pp.log1p(adata)
+# gexpr_feature = pd.DataFrame(adata.X,index=adata.obs_names,columns=adata.var_names)
+# print('gexpr_feature\n',gexpr_feature)
+# tmp = []
+# for i in tqdm(range(gexpr_feature.shape[0])):
+#     # 用totalcount = gexpr_feature.iloc[i,:].sum()计算T，无法计算S
+#     # 直接对T、S进行log变换，不确定是否能准确表示表达量
+#     # 暂时直接用log(1+x)
+#     totalcount = np.log1p(tlist[i])
+#     sourcecount = np.log1p(slist[i])
+#     tmpdata = (gexpr_feature.iloc[i,:]).tolist()
+#     pretrain_gene_x = torch.tensor(tmpdata+[totalcount,sourcecount]).unsqueeze(0)
+#     # data_gene_ids = torch.arange(gexpr_feature.shape[1]+2, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
+#     tmp.append(pretrain_gene_x)
+# print('tmp\n',tmp)
 
-#似乎把TS也遮盖删除了，需要debug
+
 def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     """
     对矩阵的每一行元素进行随机遮盖，并返回两个矩阵：一个是原始值和遮盖标记的矩阵，另一个是被遮盖后的矩阵。
@@ -205,32 +210,86 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
 
 
 
-tmp = np.array(tmp).squeeze(1)
-print(tmp.shape)#(20, 22)
-unmasked_only_matrix,mask_positions, masked_matrix = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
-print(mask_positions)
-print(masked_matrix)
-print(unmasked_only_matrix)
+# tmp = np.array(tmp).squeeze(1)
+# print(tmp.shape)#(20, 22)
+# unmasked_only_matrix,mask_positions, masked_matrix = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
+# print(mask_positions)
+# print(masked_matrix)
+# print(unmasked_only_matrix)
 
 
 #-------------------embedding---------------------------------------
-token_emb = AutoDiscretizationEmbedding2(20, unmasked_only_matrix.shape[1], 
+# token_emb = AutoDiscretizationEmbedding2(20, unmasked_only_matrix.shape[1], 
+#                                          bin_num=10, 
+#                                          bin_alpha=1.0, 
+#                                          pad_token_id=-2, 
+#                                          mask_token_id=-1)
+# pos_emb = nn.Embedding(unmasked_only_matrix.shape[1]+1, 20)
+
+# x = token_emb(torch.unsqueeze(torch.from_numpy(unmasked_only_matrix.astype(np.float32)), 2), output_weight = 0)
+# #todo  encoder_position_gene_ids获取方式
+# # 创建一个整数张量作为示例
+# #encoder_position_gene_ids应该由mask函数得到，T、S没有gene embedding
+# #也可能在load.py中
+# encoder_position_gene_ids = np.ones_like(unmasked_only_matrix, dtype=np.int64)
+# print(encoder_position_gene_ids)
+# position_emb = pos_emb(torch.from_numpy(encoder_position_gene_ids))
+# print(x)
+# print(x.shape)#([20, 4, 20])
+# x += position_emb
+# print(x)
+# print(x.shape)#([20, 4, 20])
+
+def test(data):
+    print('----------------------------------------------------------------')
+    t_marix,tlist,slist = Hierarchical_Bayesian_downsampling(data)
+    print('t_marix',t_marix)
+    print('tlist',tlist)
+    print('slist',slist)
+
+    adata = sc.AnnData(t_marix)
+    sc.pp.normalize_total(adata)
+    sc.pp.log1p(adata)
+    gexpr_feature = pd.DataFrame(adata.X,index=adata.obs_names,columns=adata.var_names)
+    print('gexpr_feature\n',gexpr_feature)
+    tmp = []
+    for i in tqdm(range(gexpr_feature.shape[0])):
+        # 用totalcount = gexpr_feature.iloc[i,:].sum()计算T，无法计算S
+        # 直接对T、S进行log变换，不确定是否能准确表示表达量
+        # 暂时直接用log(1+x)
+        totalcount = np.log1p(tlist[i])
+        sourcecount = np.log1p(slist[i])
+        tmpdata = (gexpr_feature.iloc[i,:]).tolist()
+        pretrain_gene_x = torch.tensor(tmpdata+[totalcount,sourcecount]).unsqueeze(0)
+        # data_gene_ids = torch.arange(gexpr_feature.shape[1]+2, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
+        tmp.append(pretrain_gene_x)
+    print('tmp\n',tmp)
+
+    tmp = np.array(tmp).squeeze(1)
+    print(tmp.shape)#(20, 22)
+    unmasked_only_matrix,mask_positions, masked_matrix = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
+    print(mask_positions)
+    print(masked_matrix)
+    print(unmasked_only_matrix)
+
+    token_emb = AutoDiscretizationEmbedding2(20, unmasked_only_matrix.shape[1], 
                                          bin_num=10, 
                                          bin_alpha=1.0, 
                                          pad_token_id=-2, 
                                          mask_token_id=-1)
-pos_emb = nn.Embedding(unmasked_only_matrix.shape[1]+1, 20)
+    pos_emb = nn.Embedding(unmasked_only_matrix.shape[1]+1, 20)
+    x = token_emb(torch.unsqueeze(torch.from_numpy(unmasked_only_matrix.astype(np.float32)), 2), output_weight = 0)
+    #todo  encoder_position_gene_ids获取方式
+    # 创建一个整数张量作为示例
+    #encoder_position_gene_ids应该由mask函数得到，T、S没有gene embedding
+    #也可能在load.py中
+    encoder_position_gene_ids = np.ones_like(unmasked_only_matrix, dtype=np.int64)
+    print(encoder_position_gene_ids)
+    position_emb = pos_emb(torch.from_numpy(encoder_position_gene_ids))
+    print(x)
+    print(x.shape)#([x, 4, 20])
+    x += position_emb
+    print(x)
+    print(x.shape)#([x, 4, 20])
 
-x = token_emb(torch.unsqueeze(torch.from_numpy(unmasked_only_matrix.astype(np.float32)), 2), output_weight = 0)
-#todo  encoder_position_gene_ids获取方式
-# 创建一个整数张量作为示例
-#encoder_position_gene_ids应该由mask函数得到，T、S没有gene embedding
-#也可能在load.py中
-encoder_position_gene_ids = np.ones_like(unmasked_only_matrix, dtype=np.int64)
-print(encoder_position_gene_ids)
-position_emb = pos_emb(torch.from_numpy(encoder_position_gene_ids))
-print(x)
-print(x.shape)#([20, 4, 20])
-x += position_emb
-print(x)
-print(x.shape)#([20, 4, 20])
+# test(matrix)
