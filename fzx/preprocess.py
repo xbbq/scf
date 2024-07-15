@@ -240,18 +240,18 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
 # print(x)
 # print(x.shape)#([20, 4, 20])
 
-def test(data):
+def get_unmasked_only_matrix(data):
     print('----------------------------------------------------------------')
     t_marix,tlist,slist = Hierarchical_Bayesian_downsampling(data)
-    print('t_marix',t_marix)
-    print('tlist',tlist)
-    print('slist',slist)
+    # print('t_marix',t_marix)
+    # print('tlist',tlist)
+    # print('slist',slist)
 
     adata = sc.AnnData(t_marix)
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
     gexpr_feature = pd.DataFrame(adata.X,index=adata.obs_names,columns=adata.var_names)
-    print('gexpr_feature\n',gexpr_feature)
+    # print('gexpr_feature\n',gexpr_feature)
     tmp = []
     for i in tqdm(range(gexpr_feature.shape[0])):
         # 用totalcount = gexpr_feature.iloc[i,:].sum()计算T，无法计算S
@@ -263,15 +263,21 @@ def test(data):
         pretrain_gene_x = torch.tensor(tmpdata+[totalcount,sourcecount]).unsqueeze(0)
         # data_gene_ids = torch.arange(gexpr_feature.shape[1]+2, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
         tmp.append(pretrain_gene_x)
-    print('tmp\n',tmp)
+    # print('tmp\n',tmp)
 
     tmp = np.array(tmp).squeeze(1)
     print(tmp.shape)#(20, 22)
     unmasked_only_matrix,mask_positions, masked_matrix = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
-    print(mask_positions)
-    print(masked_matrix)
-    print(unmasked_only_matrix)
+    # print(mask_positions)
+    # print(masked_matrix)
+    # print(unmasked_only_matrix)
+    # print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
+    return unmasked_only_matrix
 
+
+#?---------------得到unmasked_only_matrix-------------------
+
+def get_emb(unmasked_only_matrix):
     token_emb = AutoDiscretizationEmbedding2(20, unmasked_only_matrix.shape[1], 
                                          bin_num=10, 
                                          bin_alpha=1.0, 
