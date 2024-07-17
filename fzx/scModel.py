@@ -83,3 +83,74 @@ class AutoDiscretizationEmbedding2(nn.Module):
         if output_weight:
             return x,weight
         return x
+
+
+class scModel(nn.Module):
+    def __init__(self, input_dim, encoder_dim, decoder_dim, output_dim, 
+                 num_encoder_layers, num_decoder_layers, num_heads, dropout,
+                 mask_positions,not_zero_position):
+        super(scModel, self).__init__()
+        
+        # 输入层：通常是一个嵌入层，将输入的离散值转换为连续的嵌入向量
+        self.embedding = nn.Embedding(input_dim, encoder_dim)
+        # Dropout层初始化
+        self.dropout = nn.Dropout(dropout)
+        
+        # Encoder部分：包含多个Transformer Encoder层
+        encoder_layer = nn.TransformerEncoderLayer(encoder_dim, num_heads,dropout=dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
+        
+        # Decoder部分：包含多个Transformer Decoder层
+        decoder_layer = nn.TransformerDecoderLayer(decoder_dim, num_heads,dropout=dropout)
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
+        
+        # 输出层：通常是一个线性层，将Transformer的输出转换为最终的输出格式
+        self.output_layer = nn.Linear(decoder_dim, output_dim)
+        #
+        self.mask_positions = mask_positions
+        self.not_zero_position = not_zero_position
+        
+    #     # 初始化权重
+    #     self.init_weights()
+    
+    # def init_weights(self):
+    #     # 初始化模型权重，这里可以添加自定义的初始化逻辑
+    #     pass
+
+    def forward(self, input_seq, encoder_mask=None, decoder_mask=None):
+
+        print('input_seq',input_seq)  #[tensor([1032, 5836]), tensor([[ 1.6357,  1.8735,  2.06 ....
+        print('--------',input_seq[1].shape)
+        # index = input_seq[0]
+        # x = input_seq[1]
+        # 输入层
+        embedded = self.embedding(input_seq)
+        
+        # Encoder部分
+        encoder_output = self.transformer_encoder(embedded, mask=encoder_mask)
+        
+        # Decoder部分
+        # 注意：这里假设decoder的输入是与encoder输出相同的，实际情况可能需要根据任务调整
+        decoder_output = self.transformer_decoder(encoder_output, mask=decoder_mask)
+        
+        # 输出层
+        output = self.output_layer(decoder_output)
+        
+        return output
+    
+# 定义模型参数
+input_dim = 10000  # 例如，词汇表大小
+encoder_dim = 512   # Encoder的嵌入维度
+decoder_dim = 512   # Decoder的嵌入维度
+output_dim = 100   # 输出维度，例如，下一个词的预测或分类任务的类别数
+num_encoder_layers = 12  # Transformer Encoder层数
+num_decoder_layers = 6    # Transformer Decoder层数
+num_heads = 8             # 注意力机制中的头数
+dropout = 0.1            # Dropout比率
+mask_positions = None
+not_zero_position = None
+
+# 创建模型实例
+model = scModel(input_dim, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
+                num_heads, dropout,mask_positions,not_zero_position)
+

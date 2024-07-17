@@ -32,9 +32,9 @@ def Hierarchical_Bayesian_downsampling(matrix):
 # matrix = np.random.uniform(0, 400, size=(5, 6))
 
 matrix = [[  0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 221,   0,   0,   0,  0,   0],
- [  0,   0,  51,   0,   0,   0,   0,   0,  60,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0,   0],
- [  0,   0,   0,   0,  82,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 332,   0,   0, 12,   0],
- [349, 321,   0,   0,   0,   0,   0, 231,   0,   0,   0,   0,   0, 338,   0,   0,   0,   0, 0,   0]]
+[  0,   0,  51,   0,   0,   0,   0,   0,  60,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0,   0],
+[  0,   0,   0,   0,  82,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 332,   0,   0, 12,   0],
+[349, 321,   0,   0,   0,   0,   0, 231,   0,   0,   0,   0,   0, 338,   0,   0,   0,   0, 0,   0]]
 matrix = np.array(matrix)
 #----------------------- 生成测试矩阵----------------
 # matrix = np.zeros((20, 20), dtype=int)
@@ -118,6 +118,8 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     # 确保mask_ratio在合理的范围内
     if mask_ratio < 0 or mask_ratio > 1:
         raise ValueError("mask_ratio should be between 0 and 1")
+    
+    condition2 = (matrix != 0) 
 
     # 复制矩阵以避免修改原始数据
     masked_matrix = matrix.copy()
@@ -206,7 +208,7 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     unmasked_only_matrix = np.array(padded_vectors)     #unmasked-only matrix
     # print(unmasked_only_matrix)
 
-    return unmasked_only_matrix, mask_positions, masked_matrix       
+    return unmasked_only_matrix, mask_positions, masked_matrix, condition2       
 
 
 
@@ -267,12 +269,12 @@ def get_unmasked_only_matrix(data):
 
     tmp = np.array(tmp).squeeze(1)
     print(tmp.shape)#(20, 22)
-    unmasked_only_matrix,mask_positions, masked_matrix = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
+    unmasked_only_matrix,mask_positions, masked_matrix, not_zero_position = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
     # print(mask_positions)
     # print(masked_matrix)
     # print(unmasked_only_matrix)
-    # print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
-    return unmasked_only_matrix
+    print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
+    return unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position
 
 
 #?---------------得到unmasked_only_matrix-------------------
@@ -284,18 +286,21 @@ def get_emb(unmasked_only_matrix):
                                          pad_token_id=-2, 
                                          mask_token_id=-1)
     pos_emb = nn.Embedding(unmasked_only_matrix.shape[1]+1, 20)
-    x = token_emb(torch.unsqueeze(torch.from_numpy(unmasked_only_matrix.astype(np.float32)), 2), output_weight = 0)
+    x = token_emb(torch.unsqueeze(unmasked_only_matrix.to(dtype=torch.float32), 2), output_weight = 0)
     #todo  encoder_position_gene_ids获取方式
     # 创建一个整数张量作为示例
     #encoder_position_gene_ids应该由mask函数得到，T、S没有gene embedding
     #也可能在load.py中
     encoder_position_gene_ids = np.ones_like(unmasked_only_matrix, dtype=np.int64)
-    print(encoder_position_gene_ids)
+    # print(encoder_position_gene_ids)
     position_emb = pos_emb(torch.from_numpy(encoder_position_gene_ids))
-    print(x)
-    print(x.shape)#([x, 4, 20])
+    # print(x)
+    # print(x.shape)#([x, 4, 20])
     x += position_emb
-    print(x)
-    print(x.shape)#([x, 4, 20])
+    # print(x)
+    print('x.shape',x.shape)#([x, 4, 20])
 
 # test(matrix)
+
+# _,_,_,a=random_mask_with_position(matrix,0.3)
+# print(a)

@@ -1,0 +1,3 @@
+AutoDiscretizationEmbedding2 的emb_mask和emb_pad
+
+encoder_position_gene_ids
