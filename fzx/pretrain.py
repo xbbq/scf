@@ -11,6 +11,7 @@ import os
 import scipy.io  
 import h5py
 from scModel import scModel
+import utils
 
 
 BATCH_SIZE = 2
@@ -41,12 +42,15 @@ if os.path.exists(datapath):
         dataset2 = f['mask_positions']['data']
         dataset3 = f['not_zero_position']['data']
         dataset4 = f['masked_matrix']['data']
+        dataset5 = f['encoder_position_gene_ids']['data']
         
         # 读取数据集的内容
         data = dataset[()]
         mask_positions = dataset2[()]
         not_zero_position = dataset3[()]
         masked_matrix = dataset4[()]
+        encoder_position_gene_ids = dataset5[()]
+        encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 else:
     data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
     data = data.X
@@ -54,11 +58,12 @@ else:
     # 将其转换为稠密矩阵
     data = data.toarray()
     print(data.shape)
-    unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position = get_unmasked_only_matrix(data)
+    unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position, encoder_position_gene_ids = get_unmasked_only_matrix(data)
     print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
     print('mask_positions.shape',mask_positions.shape)
     print('masked_matrix.shape',masked_matrix.shape)
     print('not_zero_position.shape',not_zero_position.shape)
+    print('encoder_position_gene_ids.shape',encoder_position_gene_ids.shape)
     print('got unmasked_only_matrix')
 
     # # 指定文件名
@@ -70,12 +75,14 @@ else:
         group2 = f.create_group('mask_positions')
         group3 = f.create_group('not_zero_position')
         group4 = f.create_group('masked_matrix')
+        group5 = f.create_group('encoder_position_gene_ids')
         
         # 将矩阵数据写入组
         group.create_dataset('data', data=unmasked_only_matrix)
         group2.create_dataset('data', data=mask_positions)
         group3.create_dataset('data', data=not_zero_position)
         group4.create_dataset('data', data=masked_matrix)
+        group5.create_dataset('data', data=encoder_position_gene_ids)
     
     # 指定文件名
     file_name = datapath
@@ -87,12 +94,15 @@ else:
         dataset2 = f['mask_positions']['data']
         dataset3 = f['not_zero_position']['data']
         dataset4 = f['masked_matrix']['data']
+        dataset5 = f['encoder_position_gene_ids']['data']
         
         # 读取数据集的内容
         data = dataset[()]
         mask_positions = dataset2[()]
         not_zero_position = dataset3[()]
         masked_matrix = dataset4[()]
+        encoder_position_gene_ids = dataset5[()]
+        encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 print('type(data)',type(data))
 print('type(mask_positions)',type(mask_positions))
 print('type(not_zero_position)',type(not_zero_position))
@@ -106,6 +116,7 @@ print('data',data.shape)  #(10000, 3516)
 print('mask_positions',mask_positions.shape)
 print('not_zero_position',not_zero_position.dtype)
 print('masked_matrix',masked_matrix.shape)
+print('encoder_position_gene_ids',encoder_position_gene_ids.shape)
 # print('type(data)',type(data))
 
 data_train, data_val = train_test_split(t, test_size=0.05,random_state=SEED)
@@ -123,23 +134,29 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 # data2 = data2.X
 # print('type(data2)',type(data2))
 # 定义模型参数
-input_dim = 10000  # 例如，词汇表大小
-encoder_dim = 512   # Encoder的嵌入维度
+input_dim = 16908  # 词汇表大小
+encoder_dim = 768   # Encoder的嵌入维度
 decoder_dim = 512   # Decoder的嵌入维度
 output_dim = 100   # 输出维度，例如，下一个词的预测或分类任务的类别数
 num_encoder_layers = 12  # Transformer Encoder层数
 num_decoder_layers = 6    # Transformer Decoder层数
 num_heads = 8             # 注意力机制中的头数
 dropout = 0.1            # Dropout比率
+bin_num=10, 
+bin_alpha=1.0,
+pad_token_id=input_dim+1, 
+mask_token_id=input_dim+2
+print('data.shape[1]',data.shape[1])
 
 # 创建模型实例
-model = scModel(input_dim, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
-                num_heads, dropout,mask_positions,not_zero_position)
+model = scModel(input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
+                num_heads, dropout,mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha)
 #get_emb
 c = 0
 for index,data in enumerate(train_loader):
     print('data.shape',data[1].shape)#[tensor([1032, 5836]), tensor([[ 1.6357,  1.8735,  2.0654,  ..., -2.0000, -2.0000, -2.0000],[ 1.5172,  1.0223,  1.0223,  ..., -2.0000, -2.0000, -2.0000]])]
     y = model(data)
+    print(y)
     c+=1
     
     # get_emb(data)

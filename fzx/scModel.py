@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from utils import detail
 
 
 class AutoDiscretizationEmbedding2(nn.Module):
@@ -9,8 +10,9 @@ class AutoDiscretizationEmbedding2(nn.Module):
         
         self.dim = dim
         self.max_seq_len = max_seq_len
-        self.bin_num = bin_num
-        self.bin_alpha = bin_alpha     #系数
+        self.bin_num = bin_num[0]
+        self.bin_alpha = bin_alpha[0]     #系数
+        print('-------------',type(self.bin_alpha))
         
         #初始化两个全连接层mlp和mlp2，第一个层的输入维度为1，输出维度为分箱数量，第二个层的输入和输出维度都是分箱数量。
         #初始化LeakyReLU激活函数和Softmax归一化函数。
@@ -28,7 +30,9 @@ class AutoDiscretizationEmbedding2(nn.Module):
         #创建一个包含分箱索引的Tensor。保存掩码和填充标记的ID。
         self.bin_num_idx = torch.tensor(range(self.bin_num))
         self.mask_token_id = mask_token_id
-        self.pad_token_id = pad_token_id
+        self.pad_token_id = pad_token_id[0]
+        # print('211111111111111111self.pad_token_id',type(self.pad_token_id))
+        # print('211111111111111111self.mask_token_id',type(self.mask_token_id))
         # print('self.bin_num_idx',self.bin_num_idx, self.bin_num_idx.shape)
 
         #创建一个值为0的Tensor，用于索引嵌入层的第一个元素。
@@ -36,6 +40,9 @@ class AutoDiscretizationEmbedding2(nn.Module):
 
     def forward(self, x, output_weight=0):
 
+        print('type(x)',type(x))
+        print(x.shape)
+        print('self.pad_token_id',type(self.pad_token_id))
         #找出输入序列中掩码和填充标记的位置。
         x_mask_idx = (x==self.mask_token_id).nonzero()
         x_pad_idx = (x==self.pad_token_id).nonzero()
@@ -84,15 +91,34 @@ class AutoDiscretizationEmbedding2(nn.Module):
             return x,weight
         return x
 
+def get_full_seq(a,b,c,pad_id):
+    count = 0
+    print('padid',pad_id)
+    for i in range(c.shape[0]):
+        for j in range(a.shape[1]):
+            if b[i][j] != pad_id:
+                c[i][b[i][j]] = a[i][j]
+                count += 1
+    print('count',count)
+    return c
 
 class scModel(nn.Module):
-    def __init__(self, input_dim, encoder_dim, decoder_dim, output_dim, 
+    def __init__(self, input_dim, encoder_len, encoder_dim, decoder_dim, output_dim, 
                  num_encoder_layers, num_decoder_layers, num_heads, dropout,
-                 mask_positions,not_zero_position):
+                 mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha):
         super(scModel, self).__init__()
         
-        # 输入层：通常是一个嵌入层，将输入的离散值转换为连续的嵌入向量
-        self.embedding = nn.Embedding(input_dim, encoder_dim)
+        # # 输入层：通常是一个嵌入层，将输入的离散值转换为连续的嵌入向量
+        # self.embedding = nn.Embedding(input_dim, encoder_dim)
+
+        self.pad_token_id=input_dim+1, 
+        self.mask_token_id=input_dim+2
+        self.encoder_len = encoder_len  
+        detail('self.encoder_len',self.encoder_len)
+        #embedding
+        self.token_emb = AutoDiscretizationEmbedding2(encoder_dim, encoder_len, bin_num=bin_num, bin_alpha=bin_alpha, 
+                                                      pad_token_id=self.pad_token_id, mask_token_id=self.mask_token_id)
+        self.pos_emb = nn.Embedding(input_dim+3, encoder_dim)  #RandomPositionalEmbedding(embed_dim, max_seq_len)
         # Dropout层初始化
         self.dropout = nn.Dropout(dropout)
         
@@ -109,6 +135,7 @@ class scModel(nn.Module):
         #
         self.mask_positions = mask_positions
         self.not_zero_position = not_zero_position
+        self.encoder_position_gene_ids = encoder_position_gene_ids
         
     #     # 初始化权重
     #     self.init_weights()
@@ -121,17 +148,50 @@ class scModel(nn.Module):
 
         print('input_seq',input_seq)  #[tensor([1032, 5836]), tensor([[ 1.6357,  1.8735,  2.06 ....
         print('--------',input_seq[1].shape)
-        # index = input_seq[0]
-        # x = input_seq[1]
-        # 输入层
-        embedded = self.embedding(input_seq)
+        # batch的索引
+        index = input_seq[0]
+        #encoder序列
+        x = input_seq[1][:,:self.encoder_len]
+        print('--------encoder seq',x.shape)
+        #decoder序列
+        full = input_seq[1][:,self.encoder_len:]
+        print('--------decoder seq',full.shape)
+        # print('type(self.encoder_position_gene_ids)',type(self.encoder_position_gene_ids))
+        # print(self.encoder_position_gene_ids[index])
+        
+        # token and positional embedding
+        print('x.shape',x.shape)
+        x = self.token_emb(torch.unsqueeze(x, 2), output_weight = 0)
+        detail('x',x)
+        # if output_attentions:
+        #     x.requires_grad_()  # used for attn_map output
+
+        # detail('self.encoder_position_gene_ids[index]',torch.from_numpy(self.encoder_position_gene_ids[index]))
+        position_emb = self.pos_emb(torch.from_numpy(self.encoder_position_gene_ids[index]))
+        x += position_emb
+        detail('x',x)
+
+
+
         
         # Encoder部分
-        encoder_output = self.transformer_encoder(embedded, mask=encoder_mask)
+        encoder_output = self.transformer_encoder(x)
+
+        detail('encoder_output',encoder_output)
+
+        #得到完整的序列，再进decoder
+
+        full = self.token_emb(torch.unsqueeze(full, 2), output_weight = 0)
+        detail('full',full)
+
+        print('self.encoder_position_gene_ids',self.encoder_position_gene_ids[9999][3515])
+        decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
+                                     full,self.pad_token_id)
+        detail('decoder_input',decoder_input)
         
         # Decoder部分
         # 注意：这里假设decoder的输入是与encoder输出相同的，实际情况可能需要根据任务调整
-        decoder_output = self.transformer_decoder(encoder_output, mask=decoder_mask)
+        decoder_output = self.transformer_decoder(memory=decoder_input)
         
         # 输出层
         output = self.output_layer(decoder_output)
@@ -150,7 +210,10 @@ dropout = 0.1            # Dropout比率
 mask_positions = None
 not_zero_position = None
 
-# 创建模型实例
-model = scModel(input_dim, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
-                num_heads, dropout,mask_positions,not_zero_position)
+# # 创建模型实例
+# model = scModel(input_dim, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
+#                 num_heads, dropout,mask_positions,not_zero_position)
+
+# data =[torch.tensor([1032, 5836]), torch.tensor([[ 1.6357,  1.8735,  2.06 ],[2.3,3.4,4.4]])]
+# y = model(data)
 

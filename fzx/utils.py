@@ -40,4 +40,12 @@ class SequentialDistributedSampler(torch.utils.data.sampler.Sampler):
 
     def __len__(self):
         return self.num_samples
+    
+
+def detail(str,x):
+    if hasattr(x, 'shape'):
+        print(str,'-shape',x.shape)
+    print(str,'-type',type(x))
+    if hasattr(x, 'dtype'):
+        print(str,'-dtype',x.dtype)
 

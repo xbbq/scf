@@ -101,7 +101,7 @@ def main_gene_selection(X_df, gene_list):
 # print('tmp\n',tmp)
 
 
-def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
+def random_mask_with_position(matrix, mask_ratio, pad_value, mask_value):
     """
     对矩阵的每一行元素进行随机遮盖，并返回两个矩阵：一个是原始值和遮盖标记的矩阵，另一个是被遮盖后的矩阵。
     非零值遮盖概率为零值遮盖概率的十倍。
@@ -109,7 +109,8 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
     参数:
     matrix: 输入的矩阵
     mask_ratio: 非零遮盖比例，应该在0到1之间，零值遮盖比例为mask_ratio/10
-    mask_value: 用于遮盖的值
+    pad_value: 列数加一
+    mask_value: 列数加二
 
     返回:
     包含原始值和遮盖标记的矩阵
@@ -174,21 +175,28 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
 
     # 创建一个新的列表，用于存储每一行的非零向量
     non_zero_vectors = []
+    non_zero_vectors_pos = []
 
     # 遍历矩阵的每一行
     for row in masked_matrix:
-        # 创建一个空向量，用于存储非零值
+        # 创建一个空向量，用于存储非零值和非零值的位置
         non_zero_vector = []
+        non_zero_vector_pos = []
         # 遍历行的每个元素
-        for element in row:
+        # for element,index in enumerate(row):
+        for i in range(len(row)):
             # 如果元素不是0，则添加到向量中
-            if element != 0 and element != mask_value:
-                non_zero_vector.append(element)
+            if row[i] != 0 and row[i] != mask_value:
+            # if element != 0 and element != mask_value:
+                non_zero_vector.append(row[i])
+                non_zero_vector_pos.append(i)
         #用pad标记-2占位
         if len(non_zero_vector) == 0:
             non_zero_vector.append(pad_value)
+            non_zero_vector_pos.append(pad_value)
         # 将非零向量添加到列表中
         non_zero_vectors.append(non_zero_vector)
+        non_zero_vectors_pos.append(non_zero_vector_pos)
 
     # print("Original Matrix:")
     # print(masked_matrix)
@@ -199,16 +207,22 @@ def random_mask_with_position(matrix, mask_ratio, mask_value=-1, pad_value=-2):
 
     # 使用np.pad函数将每个向量用pad_value补齐到最大长度
     padded_vectors = [np.pad(vector, (0, max_length - len(vector)), 'constant', constant_values=(pad_value, pad_value)) for vector in non_zero_vectors]
+    padded_pos_vectors = [np.pad(vector, (0, max_length - len(vector)), 'constant', constant_values=(pad_value, pad_value)) for vector in non_zero_vectors_pos]
 
     # print("Original Vectors:")
     # print(non_zero_vectors)
-    # print("Padded Vectors:")
-    # print(padded_vectors)
+    # print("padded_vectors")
+    # print(len(padded_vectors))
+    # print(len(padded_vectors[0]))
+    # print("padded_pos_vectors")
+    # print(len(padded_pos_vectors))
+    # print(len(padded_pos_vectors[0]))
 
     unmasked_only_matrix = np.array(padded_vectors)     #unmasked-only matrix
+    encoder_position_gene_ids = np.array(padded_pos_vectors)
     # print(unmasked_only_matrix)
 
-    return unmasked_only_matrix, mask_positions, masked_matrix, condition2       
+    return unmasked_only_matrix, mask_positions, masked_matrix, condition2, encoder_position_gene_ids       
 
 
 
@@ -269,12 +283,12 @@ def get_unmasked_only_matrix(data):
 
     tmp = np.array(tmp).squeeze(1)
     print(tmp.shape)#(20, 22)
-    unmasked_only_matrix,mask_positions, masked_matrix, not_zero_position = random_mask_with_position(tmp, 0.3) #mask_value=-1, pad_value=-2
+    unmasked_only_matrix,mask_positions, masked_matrix, not_zero_position, encoder_position_gene_ids = random_mask_with_position(tmp, 0.3,tmp.shape[1]+1,tmp.shape[1]+2) #pad: +1;mask: +2
     # print(mask_positions)
     # print(masked_matrix)
     # print(unmasked_only_matrix)
     print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
-    return unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position
+    return unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position,encoder_position_gene_ids
 
 
 #?---------------得到unmasked_only_matrix-------------------
