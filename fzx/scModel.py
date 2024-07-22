@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from utils import detail
+from performer_pytorch import Performer
 
 
 class AutoDiscretizationEmbedding2(nn.Module):
@@ -105,7 +106,31 @@ def get_full_seq(a,b,c,pad_id):
 class scModel(nn.Module):
     def __init__(self, input_dim, encoder_len, encoder_dim, decoder_dim, output_dim, 
                  num_encoder_layers, num_decoder_layers, num_heads, dropout,
-                 mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha):
+                 mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha,
+                 dim_head = 64,                      # dim of heads
+                 local_attn_heads = 0,
+                 local_window_size = 256,
+                 causal = False,
+                 ff_mult = 4,
+                 nb_features = None,
+                 feature_redraw_interval = 1000,
+                 reversible = False,
+                 ff_chunks = 1,
+                 ff_glu = False,
+                 emb_dropout = 0.,
+                 ff_dropout = 0.,
+                 attn_dropout = 0.,
+                 generalized_attention = False,
+                 kernel_fn = nn.ReLU(),
+                 use_scalenorm = False,
+                 use_rezero = False,
+                 cross_attend = False,
+                 no_projection = False,
+                 tie_embed = False,                  # False: output is num of tokens, True: output is dim of tokens  //multiply final embeddings with token weights for logits, like gpt decoder//
+                 g2v_position_emb = True,            # priority: gene2vec, no embedding
+                 auto_check_redraw = True,
+                 qkv_bias = False
+                 ):
         super(scModel, self).__init__()
         
         # # 输入层：通常是一个嵌入层，将输入的离散值转换为连续的嵌入向量
@@ -127,8 +152,18 @@ class scModel(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
         
         # Decoder部分：包含多个Transformer Decoder层
-        decoder_layer = nn.TransformerDecoderLayer(decoder_dim, num_heads,dropout=dropout)
-        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
+
+        self.performer = Performer(decoder_dim, num_decoder_layers, num_heads, dim_head, local_attn_heads, 
+                                   local_window_size, causal, ff_mult, nb_features, 
+                                   feature_redraw_interval, reversible, ff_chunks, 
+                                   generalized_attention, kernel_fn, use_scalenorm, 
+                                   use_rezero, ff_glu, ff_dropout, attn_dropout, 
+                                   cross_attend, no_projection, auto_check_redraw, qkv_bias)
+        
+        self.to_out = nn.Linear(encoder_dim, decoder_dim)
+
+        # decoder_layer = nn.TransformerDecoderLayer(decoder_dim, num_heads,dropout=dropout)
+        # self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
         
         # 输出层：通常是一个线性层，将Transformer的输出转换为最终的输出格式
         self.output_layer = nn.Linear(decoder_dim, output_dim)
@@ -188,10 +223,19 @@ class scModel(nn.Module):
         decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
                                      full,self.pad_token_id)
         detail('decoder_input',decoder_input)
+
+        decoder_input = self.to_out(decoder_input)
         
         # Decoder部分
-        # 注意：这里假设decoder的输入是与encoder输出相同的，实际情况可能需要根据任务调整
-        decoder_output = self.transformer_decoder(memory=decoder_input)
+        decoder_output = self.performer(decoder_input)
+        
+
+        # decoder_output = self.to_out(decoder_output)
+        detail('decoder_output',decoder_output)
+
+
+
+        # decoder_output = self.transformer_decoder(memory=decoder_input)
         
         # 输出层
         output = self.output_layer(decoder_output)

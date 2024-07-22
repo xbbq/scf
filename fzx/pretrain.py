@@ -12,6 +12,7 @@ import scipy.io
 import h5py
 from scModel import scModel
 import utils
+from utils import detail
 
 
 BATCH_SIZE = 2
@@ -137,7 +138,7 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 input_dim = 16908  # 词汇表大小
 encoder_dim = 768   # Encoder的嵌入维度
 decoder_dim = 512   # Decoder的嵌入维度
-output_dim = 100   # 输出维度，例如，下一个词的预测或分类任务的类别数
+output_dim = 1   # 输出维度，例如，下一个词的预测或分类任务的类别数
 num_encoder_layers = 12  # Transformer Encoder层数
 num_decoder_layers = 6    # Transformer Decoder层数
 num_heads = 8             # 注意力机制中的头数
@@ -156,7 +157,9 @@ c = 0
 for index,data in enumerate(train_loader):
     print('data.shape',data[1].shape)#[tensor([1032, 5836]), tensor([[ 1.6357,  1.8735,  2.0654,  ..., -2.0000, -2.0000, -2.0000],[ 1.5172,  1.0223,  1.0223,  ..., -2.0000, -2.0000, -2.0000]])]
     y = model(data)
-    print(y)
+    y = torch.squeeze(y)
+    print('y',y)
+    detail('y',y)
     c+=1
     
     # get_emb(data)

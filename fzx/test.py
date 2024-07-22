@@ -42,27 +42,76 @@ class SCDataset(Dataset):
 #     print(mask_positions[data[0][0]])
 #     print(not_zero_position[data[0][0]])
 
-import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-# 原始矩阵 A
-A = np.array([[1, 2, 3],
-              [4, 5, 6],
-              [7, 8, 9]])
+class PerformerDecoderLayer(nn.Module):
+    def __init__(self, d_model, num_heads, d_ff, dropout, kernel_size=512):
+        super(PerformerDecoderLayer, self).__init__()
+        # 标准的 Transformer 解码器层组件
+        self.self_attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout)
+        self.multihead_attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout)
+        self.fc1 = nn.Linear(d_model, d_ff)
+        self.fc2 = nn.Linear(d_ff, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Performer 特有的组件
+        self.random_features = nn.Linear(d_model, kernel_size)
+        self.projection = nn.Linear(kernel_size, d_model)
 
-# 目标矩阵 B，尺寸大于 A
-B = np.zeros((A.shape[0], 10))  # 假设 B 是一个更大的矩阵，这里只是示例
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None):
+        # 标准的 Transformer 解码器自注意力
+        tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask)[0]
+        tgt = tgt + self.dropout(tgt2)
+        tgt = self.norm1(tgt)
 
-# 索引矩阵 indices，表示从 A 复制元素到 B 的列位置
-# 假设 indices 的每一行的元素都是要复制到 B 的列索引
-indices = np.array([2, 1, 0])
+        # Performer 风格的编码器-解码器注意力
+        # 这里使用随机特征和正交化技巧来近似注意力机制
+        # 为了简化，我们不展示这些技术的具体实现
+        tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask)[0]
+        tgt = tgt + self.dropout(tgt2)
+        tgt = self.norm2(tgt)
 
-# 使用高级索引填充 B
-B[np.arange(A.shape[0]), indices] = A.T  # 注意：这里使用了 A.T 来转置 A
+        # 标准的 Transformer 解码器前馈网络
+        tgt2 = self.fc1(tgt)
+        tgt2 = F.relu(tgt2)
+        tgt2 = self.fc2(tgt2)
+        tgt = tgt + self.dropout(tgt2)
 
-print("矩阵 A:")
-print(A)
-print("矩阵 B:")
-print(B)
+        # 返回解码器层的输出
+        return tgt
+
+class PerformerDecoder(nn.Module):
+    def __init__(self, num_layers, d_model, num_heads, d_ff, dropout):
+        super(PerformerDecoder, self).__init__()
+        self.layers = nn.ModuleList([
+            PerformerDecoderLayer(d_model, num_heads, d_ff, dropout)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, tgt, memory, memory_mask=None, tgt_mask=None):
+        for layer in self.layers:
+            tgt = layer(tgt, memory, tgt_mask=tgt_mask, memory_mask=memory_mask)
+        tgt = self.norm(tgt)
+        return tgt
+
+# 使用示例
+d_model = 512
+num_layers = 6
+num_heads = 8
+d_ff = 2048
+dropout = 0.1
+
+decoder = PerformerDecoder(num_layers, d_model, num_heads, d_ff, dropout)
+tgt = torch.rand(10, 32, d_model)  # (seq_length, batch_size, d_model)
+memory = torch.rand(20, 32, d_model)  # (seq_length, batch_size, d_model)
+
+output = decoder(tgt, memory)
+print(output)
 
 
 
