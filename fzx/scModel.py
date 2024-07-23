@@ -105,7 +105,7 @@ def get_full_seq(a,b,c,pad_id):
 
 class scModel(nn.Module):
     def __init__(self, input_dim, encoder_len, encoder_dim, decoder_dim, output_dim, 
-                 num_encoder_layers, num_decoder_layers, num_heads, dropout,
+                 num_encoder_layers, num_decoder_layers, num_encoder_heads, num_decoder_heads, dropout,
                  mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha,
                  dim_head = 64,                      # dim of heads
                  local_attn_heads = 0,
@@ -148,12 +148,12 @@ class scModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
         # Encoder部分：包含多个Transformer Encoder层
-        encoder_layer = nn.TransformerEncoderLayer(encoder_dim, num_heads,dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(encoder_dim, num_encoder_heads,dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
         
         # Decoder部分：包含多个Transformer Decoder层
 
-        self.performer = Performer(decoder_dim, num_decoder_layers, num_heads, dim_head, local_attn_heads, 
+        self.performer = Performer(decoder_dim, num_decoder_layers, num_decoder_heads, dim_head, local_attn_heads, 
                                    local_window_size, causal, ff_mult, nb_features, 
                                    feature_redraw_interval, reversible, ff_chunks, 
                                    generalized_attention, kernel_fn, use_scalenorm, 
@@ -222,9 +222,10 @@ class scModel(nn.Module):
         print('self.encoder_position_gene_ids',self.encoder_position_gene_ids[9999][3515])
         decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
                                      full,self.pad_token_id)
-        detail('decoder_input',decoder_input)
+        
 
         decoder_input = self.to_out(decoder_input)
+        detail('decoder_input',decoder_input)
         
         # Decoder部分
         decoder_output = self.performer(decoder_input)
