@@ -136,6 +136,8 @@ print(loss)
 weighted_loss = torch.mean(loss)  # 求和后除以非无穷大的元素数量
 print(weighted_loss)
 # print(weighted_loss.item)
+#fzx\data
+data = sc.read_h5ad('data/panglao_10000.h5ad')
 
 
 

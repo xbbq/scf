@@ -15,10 +15,11 @@ from utils import detail,CosineAnnealingWarmupRestarts
 from torch.optim import Adam
 from torch import nn
 
-
+#'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
 BATCH_SIZE = 2
 SEED = 0
-datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
+# datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
+datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
 GRADIENT_ACCUMULATION = 20
 
 class SCDataset(Dataset):
@@ -55,7 +56,9 @@ if os.path.exists(datapath):
         encoder_position_gene_ids = dataset5[()]
         encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 else:
-    data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
+    #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
+    # data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
+    data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
     data = data.X
     # print(data.shape)
     # 将其转换为稠密矩阵
