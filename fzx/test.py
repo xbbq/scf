@@ -118,26 +118,12 @@ input = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0],
 target = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0],
                              [4.0, 4.0, 3.0, 2.0, 2.0]])
 
-mask = torch.tensor([[1, 0, 0, 0, 0],
-                             [1, 0, 0, 0, 1]])
+a = input.numel()
+print(a)
+correct = (input == target).sum()
 
-# 计算 MSE 损失
-mse_loss = nn.MSELoss(reduction='none')  # 使用 reduction='none' 来获取原始的损失矩阵
-loss = mse_loss(input, target)
-print(loss)
-
-# 应用掩码：将掩码中为 0 的位置设置为无穷大
-loss = loss * mask
-print(loss)
-loss[mask == 0] = 0  # 将掩码为 0 的损失设置为无穷大
-print(loss)
-
-# 计算加权 MSE 损失，忽略掩码为 0 的位置
-weighted_loss = torch.mean(loss)  # 求和后除以非无穷大的元素数量
-print(weighted_loss)
-# print(weighted_loss.item)
-#fzx\data
-data = sc.read_h5ad('data/panglao_10000.h5ad')
+correct = torch.true_divide(correct, a).mean().item()
+print(correct)
 
 
 

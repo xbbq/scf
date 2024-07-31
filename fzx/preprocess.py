@@ -5,6 +5,7 @@ import torch
 from tqdm import tqdm
 from scModel import AutoDiscretizationEmbedding2
 from torch import nn
+from utils import detail
 
 T_threshold = 1000
 
@@ -281,6 +282,9 @@ def get_unmasked_only_matrix(data):
         tmp.append(pretrain_gene_x)
     # print('tmp\n',tmp)
 
+    tmp = torch.stack(tmp)
+
+    print('tmp.shape',tmp.shape)
     tmp = np.array(tmp).squeeze(1)
     print(tmp.shape)#(20, 22)
     unmasked_only_matrix,mask_positions, masked_matrix, not_zero_position, encoder_position_gene_ids = random_mask_with_position(tmp, 0.3,tmp.shape[1]+1,tmp.shape[1]+2) #pad: +1;mask: +2
