@@ -219,7 +219,7 @@ class scModel(nn.Module):
         full = self.token_emb(torch.unsqueeze(full, 2), output_weight = 0)
         detail('full',full)
 
-        print('self.encoder_position_gene_ids',self.encoder_position_gene_ids[9999][3515])
+        # print('self.encoder_position_gene_ids',self.encoder_position_gene_ids[9999][3515])
         decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
                                      full,self.pad_token_id)
         
