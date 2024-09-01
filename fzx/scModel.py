@@ -97,14 +97,15 @@ def get_full_seq(a,b,c,pad_id):
     print('padid',pad_id)
     for i in range(c.shape[0]):
         for j in range(a.shape[1]):
-            if b[i][j] != pad_id:
+            if b[i][j].cpu() != torch.tensor(pad_id):
+                # print('b[i][j]',b[i][j])
                 c[i][b[i][j]] = a[i][j]
                 count += 1
     print('count',count)
     return c
 
 class scModel(nn.Module):
-    def __init__(self, input_dim, encoder_len, encoder_dim, decoder_dim, output_dim, 
+    def __init__(self, device, input_dim, encoder_len, encoder_dim, decoder_dim, output_dim, 
                  num_encoder_layers, num_decoder_layers, num_encoder_heads, num_decoder_heads, dropout,
                  mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha,
                  dim_head = 64,                      # dim of heads
@@ -136,7 +137,9 @@ class scModel(nn.Module):
         # # 输入层：通常是一个嵌入层，将输入的离散值转换为连续的嵌入向量
         # self.embedding = nn.Embedding(input_dim, encoder_dim)
 
-        self.pad_token_id=input_dim+1, 
+        self.device = device
+        
+        self.pad_token_id=input_dim+1,
         self.mask_token_id=input_dim+2
         self.encoder_len = encoder_len  
         detail('self.encoder_len',self.encoder_len)
@@ -201,8 +204,15 @@ class scModel(nn.Module):
         # if output_attentions:
         #     x.requires_grad_()  # used for attn_map output
 
-        # detail('self.encoder_position_gene_ids[index]',torch.from_numpy(self.encoder_position_gene_ids[index]))
-        position_emb = self.pos_emb(torch.from_numpy(self.encoder_position_gene_ids[index]))
+        # detail('self.encoder_position_gene_ids[index]',self.encoder_position_gene_ids[index])
+        gpu_tensor = index
+        cpu_index = gpu_tensor.cpu()
+        # detail('cpu_encoder_position_gene_ids',cpu_encoder_position_gene_ids)
+        tensor = torch.from_numpy(self.encoder_position_gene_ids[cpu_index])
+        tensor = tensor.to(self.device)
+        position_emb = self.pos_emb(tensor)
+        # torch.from_numpy(self.encoder_position_gene_ids[cpu_index]).to(self.device)
+        # position_emb = self.pos_emb(torch.from_numpy(self.encoder_position_gene_ids[cpu_index]))
         x += position_emb
         detail('x',x)
 
@@ -220,8 +230,14 @@ class scModel(nn.Module):
         detail('full',full)
 
         # print('self.encoder_position_gene_ids',self.encoder_position_gene_ids[9999][3515])
-        decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
+        gpu_tensor = index
+        cpu_index = gpu_tensor.cpu()
+        tensor = torch.from_numpy(self.encoder_position_gene_ids[cpu_index])
+        tensor = tensor.to(self.device)
+        decoder_input = get_full_seq(encoder_output,tensor,
                                      full,self.pad_token_id)
+        # decoder_input = get_full_seq(encoder_output,self.encoder_position_gene_ids[index],
+        #                              full,self.pad_token_id)
         
 
         decoder_input = self.to_out(decoder_input)

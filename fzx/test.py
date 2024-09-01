@@ -139,5 +139,9 @@ print(weighted_loss)
 #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
 # data = sc.read_h5ad('data/panglao_10000.h5ad')
 
+for i in range(loss.shape[0]):
+    for j in range(loss.shape[1]):
+        print(loss[i][j])
+
 
 

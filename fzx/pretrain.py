@@ -18,8 +18,8 @@ from torch import nn
 #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
 BATCH_SIZE = 2
 SEED = 0
-datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
-# datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
+# datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
+datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
 GRADIENT_ACCUMULATION = 20
 
 class SCDataset(Dataset):
@@ -57,8 +57,8 @@ if os.path.exists(datapath):
         encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 else:
     #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
-    data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
-    # data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
+    # data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
+    data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
     data = data.X
     # print(data.shape)
     # 将其转换为稠密矩阵
@@ -157,9 +157,22 @@ mask_token_id=input_dim+2
 print('data.shape[1]',data.shape[1])
 encoder_len = data.shape[1]
 
+# 检查CUDA是否可用，并设置设备
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # 创建模型实例
-model = scModel(input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
+model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
                 num_encoder_heads, num_decoder_heads, dropout,mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha)
+
+
+
+
+# 将模型移至GPU
+model.to(device)
+
+# 确认模型已经在GPU上
+print(f"Model is on {device}")
+
 
 # optimizer
 optimizer = Adam(model.parameters(), lr=1e-4)
@@ -204,6 +217,7 @@ for i in range(1, 100):
     for index, data in enumerate(train_loader):
         index += 1
         # data = data.to(device)
+        data = [tensor.to(device) for tensor in data]
         # data, labels = data_mask(data)
         if index % GRADIENT_ACCUMULATION != 0:
             # with model.no_sync():
@@ -212,9 +226,35 @@ for i in range(1, 100):
             print('shape1',logits.shape)
             print('shape2',data[1][:,encoder_len:].shape)
             loss = mse_loss(logits,data[1][:,encoder_len:]) / GRADIENT_ACCUMULATION
-            detail('mask_positions[data[0]]',mask_positions[data[0]])
-            loss = loss * torch.from_numpy(mask_positions[data[0]])
-            loss[mask_positions[data[0]] == 0] = 0
+
+            # detail('mask_positions[data[0]]',mask_positions[data[0]])
+            
+            # loss_detached = loss.detach().numpy()
+            # loss_detached = loss_detached * mask_positions[data[0]]
+            # detail('loss_detached',loss_detached)
+            # loss_detached[mask_positions == 0] = 0
+            # loss = torch.mean(loss_detached)
+
+            # gpu_tensor = index
+            # cpu_index = gpu_tensor.cpu()
+            # # detail('cpu_encoder_position_gene_ids',cpu_encoder_position_gene_ids)
+            # tensor = torch.from_numpy(self.encoder_position_gene_ids[cpu_index])
+            # tensor = tensor.to(self.device)
+            # position_emb = self.pos_emb(tensor)
+
+            gpu_tensor = data[0]
+            cpu_index = gpu_tensor.cpu()
+            tensor = torch.from_numpy(mask_positions[cpu_index])
+            tensor = tensor.to(device)
+            loss.to(device)
+            print('tensor',tensor)
+            print('loss',loss)
+
+            loss = loss * tensor
+
+            tensor2 = torch.from_numpy(mask_positions[cpu_index])
+            tensor2 = tensor2.to(device)
+            loss[tensor2 == 0] = 0
             loss = torch.mean(loss)
 
             loss.backward()
@@ -222,19 +262,24 @@ for i in range(1, 100):
             logits = model(data)
             logits = torch.squeeze(logits)
             loss = mse_loss(logits,data[1][:,encoder_len:]) / GRADIENT_ACCUMULATION
-            loss = loss * torch.from_numpy(mask_positions[data[0]])
-            loss[mask_positions[data[0]] == 0] = 0
+
+            gpu_tensor = data[0]
+            cpu_index = gpu_tensor.cpu()
+            tensor = torch.from_numpy(mask_positions[cpu_index])
+            tensor = tensor.to(device)
+            loss.to(device)
+            loss = loss * tensor
+            # loss = loss * torch.from_numpy(mask_positions[data[0]])
+            tensor2 = torch.from_numpy(mask_positions[cpu_index])
+            tensor2 = tensor2.to(device)
+            loss[tensor2 == 0] = 0
+            # loss[mask_positions[data[0]] == 0] = 0
             loss = torch.mean(loss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), int(1e2))
             optimizer.step()
             optimizer.zero_grad()
         running_loss += loss.item()
-
-        # a = logits.numel()
-        # print(a)
-        # correct = (logits == data[1][:,encoder_len:]).sum()
-        # cum_acc = torch.true_divide(correct, a).mean().item()
     #     final = softmax(logits)[..., 1:-1]
     #     final = final.argmax(dim=-1) + 1
     #     pred_num = (labels != PAD_TOKEN_ID).sum(dim=-1)
@@ -247,11 +292,11 @@ for i in range(1, 100):
     # if is_master:
     #     print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f} | Accuracy: {epoch_acc:6.4f}%  ==')
     # dist.barrier()
-    print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
+    print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}   ==')
     # 打开文件，模式为 'w'（写模式）
-    # with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "w") as file:
-    #     file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
-    #     file.write("\n")  # 追加一个换行符
+    with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "w") as file:
+        file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
+        file.write("\n")  # 追加一个换行符
     print(1)
     scheduler.step()
     print(2)
