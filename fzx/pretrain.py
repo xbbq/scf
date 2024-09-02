@@ -294,43 +294,63 @@ for i in range(1, 100):
     # dist.barrier()
     print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}   ==')
     # 打开文件，模式为 'w'（写模式）
-    with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "w") as file:
+    with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "a") as file:
         file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
         file.write("\n")  # 追加一个换行符
     print(1)
     scheduler.step()
     print(2)
 
-    # if i % 1 == 0:
-    #     model.eval()
-    #     running_loss = 0.0
-    #     running_error = 0.0
-    #     predictions = []
-    #     truths = []
-    #     with torch.no_grad():
-    #         for index, data in enumerate(val_loader):
-    #             index += 1
-    #             data = data.to(device)
-    #             data, labels = data_mask(data)
-    #             logits = model(data)
-    #             loss = loss_fn(logits.transpose(1, 2), labels)
-    #             running_loss += loss.item()
-    #             softmax = nn.Softmax(dim=-1)
-    #             final = softmax(logits)[..., 1:-1]
-    #             final = final.argmax(dim=-1) + 1
-    #             predictions.append(final)
-    #             truths.append(labels)
-    #         del data, labels, logits, final
-    #         # gather
-    #         predictions = distributed_concat(torch.cat(predictions, dim=0), len(val_sampler.dataset), world_size)
-    #         truths = distributed_concat(torch.cat(truths, dim=0), len(val_sampler.dataset), world_size)
-    #         correct_num = ((truths != PAD_TOKEN_ID) * (predictions == truths)).sum(dim=-1)[0].item()
-    #         val_num = (truths != PAD_TOKEN_ID).sum(dim=-1)[0].item()
-    #         val_loss = running_loss / index
-    #         val_loss = get_reduced(val_loss, local_rank, 0, world_size)
-    #     if is_master:
-    #         val_acc = 100 * correct_num / val_num
-    #         print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f} | Accuracy: {val_acc:6.4f}%  ==')
+    if i % 1 == 0:
+        model.eval()
+        running_loss = 0.0
+        # running_error = 0.0
+        # predictions = []
+        # truths = []
+        with torch.no_grad():
+            for index, data in enumerate(val_loader):
+                index += 1
+                data = data.to(device)
+                # data, labels = data_mask(data)
+                logits = model(data)
+                logits = torch.squeeze(logits)
+                loss = mse_loss(logits,data[1][:,encoder_len:])
+                # loss = loss_fn(logits.transpose(1, 2), labels)
+                gpu_tensor = data[0]
+                cpu_index = gpu_tensor.cpu()
+                tensor = torch.from_numpy(mask_positions[cpu_index])
+                tensor = tensor.to(device)
+                loss.to(device)
+                loss = loss * tensor
+                # loss = loss * torch.from_numpy(mask_positions[data[0]])
+                tensor2 = torch.from_numpy(mask_positions[cpu_index])
+                tensor2 = tensor2.to(device)
+                loss[tensor2 == 0] = 0
+                # loss[mask_positions[data[0]] == 0] = 0
+                loss = torch.mean(loss)
+                running_loss += loss.item()
+
+            #     softmax = nn.Softmax(dim=-1)
+            #     final = softmax(logits)[..., 1:-1]
+            #     final = final.argmax(dim=-1) + 1
+            #     predictions.append(final)
+            #     truths.append(labels)
+            # del data, labels, logits, final
+            # gather
+            # predictions = distributed_concat(torch.cat(predictions, dim=0), len(val_sampler.dataset), world_size)
+            # truths = distributed_concat(torch.cat(truths, dim=0), len(val_sampler.dataset), world_size)
+            # correct_num = ((truths != PAD_TOKEN_ID) * (predictions == truths)).sum(dim=-1)[0].item()
+            # val_num = (truths != PAD_TOKEN_ID).sum(dim=-1)[0].item()
+            val_loss = running_loss / index
+            # val_loss = get_reduced(val_loss, local_rank, 0, world_size)
+        print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
+        # 打开文件，模式为 'w'（写模式）
+        with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "a") as file:
+            file.write(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
+            file.write("\n")  # 追加一个换行符
+        # if is_master:
+        #     val_acc = 100 * correct_num / val_num
+        #     print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f} | Accuracy: {val_acc:6.4f}%  ==')
     # del predictions, truths
 
     # if is_master:
