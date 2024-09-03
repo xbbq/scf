@@ -162,8 +162,8 @@ val_dataset = SCDataset(data_val)
 train_sampler = DistributedSampler(train_dataset)
 val_sampler = SequentialDistributedSampler(val_dataset, batch_size=BATCH_SIZE, world_size=world_size)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler,drop_last=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler,drop_last=True)
 
 # data2 = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
 # data2 = data2.X
