@@ -11,13 +11,37 @@ import os
 import scipy.io  
 import h5py
 from scModel import scModel
-from utils import detail,CosineAnnealingWarmupRestarts
+from utils import detail,CosineAnnealingWarmupRestarts,seed_all,get_reduced
 from torch.optim import Adam
 from torch import nn
+import argparse
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+from utils import *
 
 #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
-BATCH_SIZE = 2
-SEED = 0
+parser = argparse.ArgumentParser()
+parser.add_argument("--local_rank", type=int, default=-1, help='Local process rank.')
+parser.add_argument("--epoch", type=int, default=100, help='Number of epochs.')
+parser.add_argument("--batch_size", type=int, default=2, help='Number of batch size.')
+parser.add_argument("--seed", type=int, default=2021, help='Random seed.')
+
+args = parser.parse_args()
+# rank = int(os.environ["RANK"])
+rank = int(os.environ.get('LOCAL_RANK',0))
+local_rank = int(os.environ.get('LOCAL_RANK',0))
+is_master = rank == 0
+BATCH_SIZE = args.batch_size
+EPOCHS = args.epoch
+SEED = args.seed
+# local_rank = args.local_rank
+
+dist.init_process_group(backend='nccl')
+torch.cuda.set_device(local_rank)
+device = torch.device("cuda", local_rank)
+world_size = torch.distributed.get_world_size()
+seed_all(SEED + torch.distributed.get_rank())
 # datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
 datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
 GRADIENT_ACCUMULATION = 20
@@ -128,14 +152,18 @@ print('encoder_position_gene_ids',encoder_position_gene_ids.shape)
 data_train, data_val = train_test_split(t, test_size=0.05,random_state=SEED)
 
 train_dataset = SCDataset(data_train)
-
-# print('-----------------------',index)
 val_dataset = SCDataset(data_val)
-train_sampler = RandomSampler(train_dataset)
+# train_sampler = RandomSampler(train_dataset)
 
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE,sampler=train_sampler)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+# train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE,sampler=train_sampler)
+# val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+#--------------------------------------------------------------------------------------------------
+train_sampler = DistributedSampler(train_dataset)
+val_sampler = SequentialDistributedSampler(val_dataset, batch_size=BATCH_SIZE, world_size=world_size)
+
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler)
 
 # data2 = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
 # data2 = data2.X
@@ -158,7 +186,7 @@ print('data.shape[1]',data.shape[1])
 encoder_len = data.shape[1]
 
 # 检查CUDA是否可用，并设置设备
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 创建模型实例
 model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
@@ -169,7 +197,7 @@ model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, outp
 
 # 将模型移至GPU
 model.to(device)
-
+model = DDP(model, device_ids=[local_rank], output_device=local_rank)
 # 确认模型已经在GPU上
 print(f"Model is on {device}")
 
@@ -186,9 +214,8 @@ scheduler = CosineAnnealingWarmupRestarts(
     warmup_steps=5,
     gamma=0.9
 )
-loss_fn = nn.CrossEntropyLoss(reduction='mean')
 # 计算 MSE 损失
-mse_loss = nn.MSELoss(reduction='none')  # 使用 reduction='none' 来获取原始的损失矩阵
+mse_loss = nn.MSELoss(reduction='none').to(local_rank)  # 使用 reduction='none' 来获取原始的损失矩阵
 softmax = nn.Softmax(dim=-1)
 
 
@@ -207,11 +234,12 @@ softmax = nn.Softmax(dim=-1)
 #     if c >0:
 #         break
 
-
-for i in range(1, 100):
-    # train_loader.sampler.set_epoch(i)
+dist.barrier()
+for i in range(1, EPOCHS+1):
+    train_loader.sampler.set_epoch(i)
     print(f'    ==  Epoch: {i} ' )
     model.train()
+    dist.barrier()
     running_loss = 0.0
     cum_acc = 0.0
     for index, data in enumerate(train_loader):
@@ -287,12 +315,12 @@ for i in range(1, 100):
     #     cum_acc += torch.true_divide(correct_num, pred_num).mean().item()
     epoch_loss = running_loss / index
     # epoch_acc = 100 * cum_acc / index
-    # epoch_loss = get_reduced(epoch_loss, local_rank, 0, world_size)
+    epoch_loss = get_reduced(epoch_loss, local_rank, 0, world_size)
     # epoch_acc = get_reduced(epoch_acc, local_rank, 0, world_size)
-    # if is_master:
-    #     print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f} | Accuracy: {epoch_acc:6.4f}%  ==')
-    # dist.barrier()
-    print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}   ==')
+    if is_master:
+        print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
+    dist.barrier()
+    # print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}   ==')
     # 打开文件，模式为 'w'（写模式）
     with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "a") as file:
         file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
@@ -303,6 +331,7 @@ for i in range(1, 100):
 
     if i % 1 == 0:
         model.eval()
+        dist.barrier()
         running_loss = 0.0
         # running_error = 0.0
         # predictions = []
@@ -310,7 +339,8 @@ for i in range(1, 100):
         with torch.no_grad():
             for index, data in enumerate(val_loader):
                 index += 1
-                data = data.to(device)
+                # data = data.to(device)
+                data = [tensor.to(device) for tensor in data]
                 # data, labels = data_mask(data)
                 logits = model(data)
                 logits = torch.squeeze(logits)
@@ -342,15 +372,14 @@ for i in range(1, 100):
             # correct_num = ((truths != PAD_TOKEN_ID) * (predictions == truths)).sum(dim=-1)[0].item()
             # val_num = (truths != PAD_TOKEN_ID).sum(dim=-1)[0].item()
             val_loss = running_loss / index
-            # val_loss = get_reduced(val_loss, local_rank, 0, world_size)
-        print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
+            val_loss = get_reduced(val_loss, local_rank, 0, world_size)
+        # print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
         # 打开文件，模式为 'w'（写模式）
         with open("/home/share/huadjyin/home/fengzhixin/scf/scf/p.txt", "a") as file:
             file.write(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
             file.write("\n")  # 追加一个换行符
-        # if is_master:
-        #     val_acc = 100 * correct_num / val_num
-        #     print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f} | Accuracy: {val_acc:6.4f}%  ==')
+        if is_master:
+            print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f}   ==')
     # del predictions, truths
 
     # if is_master:
