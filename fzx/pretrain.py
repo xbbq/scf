@@ -44,7 +44,7 @@ world_size = torch.distributed.get_world_size()
 seed_all(SEED + torch.distributed.get_rank())
 # datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
 datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
-GRADIENT_ACCUMULATION = 20
+GRADIENT_ACCUMULATION = 60
 
 class SCDataset(Dataset):
     def __init__(self, data):
@@ -68,31 +68,51 @@ if os.path.exists(datapath):
         # 访问名为'unmasked_only_matrix'的数据集
         dataset = f['unmasked_only_matrix']['data']
         dataset2 = f['mask_positions']['data']
-        dataset3 = f['not_zero_position']['data']
+        # dataset3 = f['not_zero_position']['data']
         dataset4 = f['masked_matrix']['data']
         dataset5 = f['encoder_position_gene_ids']['data']
         
         # 读取数据集的内容
         data = dataset[()]
         mask_positions = dataset2[()]
-        not_zero_position = dataset3[()]
+        # not_zero_position = dataset3[()]
         masked_matrix = dataset4[()]
         encoder_position_gene_ids = dataset5[()]
         encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 else:
     #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
     # data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
-    data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
-    data = data.X
+    data1 = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad')
+    # data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
+    tmp = data1.X
+    del data1
+    
+    half_index = tmp.shape[0] // 5
+    first_half = tmp[:half_index, :]
+    # float16_csr = first_half.astype(np.float16)
+    # detail('float16_csr',float16_csr)
+    del tmp
+    # print(data.shape)
+    data = first_half.toarray()
+    del first_half
+    # data = data.X
     # print(data.shape)
     # 将其转换为稠密矩阵
-    data = data.toarray()
+    # data = data.toarray()
     print(data.shape)
-    unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position, encoder_position_gene_ids = get_unmasked_only_matrix(data)
+    _,unmasked_only_matrix,mask_positions,masked_matrix,_, encoder_position_gene_ids = get_unmasked_only_matrix(data)
+    
+    # data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
+    # data = data.X
+    # # print(data.shape)
+    # # 将其转换为稠密矩阵
+    # data = data.toarray()
+    # print(data.shape)
+    # _,unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position, encoder_position_gene_ids = get_unmasked_only_matrix(data)
     print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
     print('mask_positions.shape',mask_positions.shape)
     print('masked_matrix.shape',masked_matrix.shape)
-    print('not_zero_position.shape',not_zero_position.shape)
+    # print('not_zero_position.shape',not_zero_position.shape)
     print('encoder_position_gene_ids.shape',encoder_position_gene_ids.shape)
     print('got unmasked_only_matrix')
 
@@ -103,14 +123,14 @@ else:
         # 创建一个名为'unmasked_only_matrix'的组
         group = f.create_group('unmasked_only_matrix')
         group2 = f.create_group('mask_positions')
-        group3 = f.create_group('not_zero_position')
+        # group3 = f.create_group('not_zero_position')
         group4 = f.create_group('masked_matrix')
         group5 = f.create_group('encoder_position_gene_ids')
         
         # 将矩阵数据写入组
         group.create_dataset('data', data=unmasked_only_matrix)
         group2.create_dataset('data', data=mask_positions)
-        group3.create_dataset('data', data=not_zero_position)
+        # group3.create_dataset('data', data=not_zero_position)
         group4.create_dataset('data', data=masked_matrix)
         group5.create_dataset('data', data=encoder_position_gene_ids)
     
@@ -122,20 +142,20 @@ else:
         # 访问名为'unmasked_only_matrix'的数据集
         dataset = f['unmasked_only_matrix']['data']
         dataset2 = f['mask_positions']['data']
-        dataset3 = f['not_zero_position']['data']
+        # dataset3 = f['not_zero_position']['data']
         dataset4 = f['masked_matrix']['data']
         dataset5 = f['encoder_position_gene_ids']['data']
         
         # 读取数据集的内容
         data = dataset[()]
         mask_positions = dataset2[()]
-        not_zero_position = dataset3[()]
+        # not_zero_position = dataset3[()]
         masked_matrix = dataset4[()]
         encoder_position_gene_ids = dataset5[()]
         encoder_position_gene_ids = encoder_position_gene_ids.astype(int)
 print('type(data)',type(data))
 print('type(mask_positions)',type(mask_positions))
-print('type(not_zero_position)',type(not_zero_position))
+# print('type(not_zero_position)',type(not_zero_position))
 print('type(masked_matrix)',type(masked_matrix))
 
 t = torch.cat((torch.from_numpy(data),torch.from_numpy(masked_matrix)),dim=1)
@@ -144,7 +164,7 @@ print('type(t)',type(t))
 
 print('data',data.shape)  #(10000, 3516)
 print('mask_positions',mask_positions.shape)
-print('not_zero_position',not_zero_position.dtype)
+# print('not_zero_position',not_zero_position.dtype)
 print('masked_matrix',masked_matrix.shape)
 print('encoder_position_gene_ids',encoder_position_gene_ids.shape)
 # print('type(data)',type(data))
@@ -190,7 +210,7 @@ encoder_len = data.shape[1]
 
 # 创建模型实例
 model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
-                num_encoder_heads, num_decoder_heads, dropout,mask_positions,not_zero_position,encoder_position_gene_ids,bin_num,bin_alpha)
+                num_encoder_heads, num_decoder_heads, dropout,mask_positions,'not_zero_position',encoder_position_gene_ids,bin_num,bin_alpha)
 
 
 

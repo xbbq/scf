@@ -10,7 +10,7 @@ import numpy as np
 import os
 import scipy.io  
 import h5py
-from scModeltest import scModel
+from scModel_v1 import scModel
 from utils import detail,CosineAnnealingWarmupRestarts,seed_all,get_reduced
 from torch.optim import Adam
 from torch import nn
@@ -18,6 +18,7 @@ import argparse
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+from torch.cuda.amp import GradScaler
 
 #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
 parser = argparse.ArgumentParser()
@@ -43,7 +44,10 @@ world_size = torch.distributed.get_world_size()
 seed_all(SEED + torch.distributed.get_rank())
 # datapath = 'C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\output.h5ad'
 datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
-GRADIENT_ACCUMULATION = 20
+GRADIENT_ACCUMULATION = 100
+
+def cleanup():
+    dist.destroy_process_group()
 
 class SCDataset(Dataset):
     def __init__(self, data):
@@ -61,12 +65,16 @@ class SCDataset(Dataset):
 # data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
 data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad')
 # data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
-data = data.X
+tmp = data.X
+half_index = tmp.shape[0] // 6
+first_half = tmp[:half_index, :]
+del data,tmp
 # print(data.shape)
-# 将其转换为稠密矩阵
-# data = data.toarray()
+data = first_half.toarray()
+del first_half
 detail('data',data)
 print('44','data.shape',data.shape)
+data = data.astype(np.float16)
 # t = torch.cat((torch.from_numpy(data),torch.from_numpy(masked_matrix)),dim=1)
 
 data_train, data_val = train_test_split(data, test_size=0.05,random_state=SEED)
@@ -89,9 +97,9 @@ input_dim = 16908  # 词汇表大小
 encoder_dim = 768   # Encoder的嵌入维度
 decoder_dim = 512   # Decoder的嵌入维度
 output_dim = 1   # 输出维度，例如，下一个词的预测或分类任务的类别数
-num_encoder_layers = 12  # Transformer Encoder层数
+num_encoder_layers = 6  # Transformer Encoder层数
 num_decoder_layers = 6    # Transformer Decoder层数
-num_encoder_heads = 12             # 注意力机制中的头数
+num_encoder_heads = 8             # 注意力机制中的头数
 num_decoder_heads = 8             # 注意力机制中的头数
 dropout = 0.1            # Dropout比率
 bin_num=10, 
@@ -103,9 +111,11 @@ encoder_len = data.shape[1]
 
 # 检查CUDA是否可用，并设置设备
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# 初始化GradScaler
+scaler = GradScaler()
 
 # 创建模型实例
-model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
+model = scModel(device, input_dim, 1000, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 
                 num_encoder_heads, num_decoder_heads, dropout,'mask_positions','not_zero_position','encoder_position_gene_ids',bin_num,bin_alpha)
 
 
@@ -114,6 +124,8 @@ model = scModel(device, input_dim, data.shape[1], encoder_dim, decoder_dim, outp
 # 将模型移至GPU
 model.to(device)
 model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+# 将模型转换为半精度浮点数
+# model.half()
 # 确认模型已经在GPU上
 print(f"Model is on {device}")
 
@@ -163,14 +175,12 @@ for i in range(1, 100):
         index += 1
         # print('146','dataindex',dataindex)
         print('147','data.shape',data.shape)
-        ori_data = data
         data = data.numpy()
-        ts_matrix,unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position, encoder_position_gene_ids = get_unmasked_only_matrix(data)
+        ts_matrix,unmasked_only_matrix,mask_positions,masked_matrix,_, encoder_position_gene_ids = get_unmasked_only_matrix(data)
         detail('ts_matrix',ts_matrix)
         print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
         print('mask_positions.shape',mask_positions.shape)
         print('masked_matrix.shape',masked_matrix.shape)
-        print('not_zero_position.shape',not_zero_position.shape)
         print('encoder_position_gene_ids.shape',encoder_position_gene_ids.shape)
         print('got unmasked_only_matrix')
         # data = data.to(device)
@@ -182,104 +192,92 @@ for i in range(1, 100):
         # data = [tensor.to(device) for tensor in data]
         # data, labels = data_mask(data)
         if index % GRADIENT_ACCUMULATION != 0:
-            # with model.no_sync():
-            logits = model(data,full,mask_positions,encoder_position_gene_ids)
-            logits = torch.squeeze(logits)
-            print('shape1',logits.shape)#16908
-            print('shape2',ts_matrix.shape)#16906
-            loss = mse_loss(logits,torch.from_numpy(ts_matrix)) / GRADIENT_ACCUMULATION
+            with model.no_sync():
+                with torch.cuda.amp.autocast():
+                    logits = model(data,full,mask_positions,encoder_position_gene_ids)
+                    logits = torch.squeeze(logits)
+                    print('shape1',logits.shape)#16908
+                    print('shape2',ts_matrix.shape)#16906
+                    loss = mse_loss(logits,torch.from_numpy(ts_matrix).to(device)) / GRADIENT_ACCUMULATION
+                    tensor = mask_positions.to(device)
+                    loss.to(device)
+                    loss = loss * tensor
+                    tensor2 = mask_positions.to(device)
+                    loss[tensor2 == 0] = 0
+                    loss = torch.mean(loss)
 
-            # gpu_tensor = data[0]
-            # cpu_index = gpu_tensor.cpu()
-            # tensor = torch.from_numpy(mask_positions[cpu_index])
-            tensor = mask_positions.to(device)
-            loss.to(device)
-            # print('tensor',tensor)
-            # print('loss',loss)
-
-            loss = loss * tensor
-
-            # tensor2 = torch.from_numpy(mask_positions[cpu_index])
-            tensor2 = mask_positions.to(device)
-            loss[tensor2 == 0] = 0
-            loss = torch.mean(loss)
-
-            loss.backward()
+                    loss.backward()
+                # 使用GradScaler来缩放损失以避免梯度下溢
+                # scaler.scale(loss).backward()
         if index % GRADIENT_ACCUMULATION == 0:
-            logits = model(data,full,mask_positions,encoder_position_gene_ids)
-            logits = torch.squeeze(logits)
-            print('shape1',logits.shape)
-            print('shape2',ts_matrix.shape)
-            loss = mse_loss(logits,torch.from_numpy(ts_matrix)) / GRADIENT_ACCUMULATION
-
-            tensor = mask_positions.to(device)
-            loss.to(device)
-            # print('tensor',tensor)
-            # print('loss',loss)
-
-            loss = loss * tensor
-
-            # tensor2 = torch.from_numpy(mask_positions[cpu_index])
-            tensor2 = mask_positions.to(device)
-            loss[tensor2 == 0] = 0
-            loss = torch.mean(loss)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), int(1e2))
-            optimizer.step()
-            optimizer.zero_grad()
+            with torch.cuda.amp.autocast():
+                logits = model(data,full,mask_positions,encoder_position_gene_ids)
+                logits = torch.squeeze(logits)
+                print('shape1',logits.shape)
+                print('shape2',torch.from_numpy(ts_matrix).shape)
+                loss = mse_loss(logits,torch.from_numpy(ts_matrix).to(device)) / GRADIENT_ACCUMULATION
+                tensor = mask_positions.to(device)
+                loss.to(device)
+                loss = loss * tensor
+                tensor2 = mask_positions.to(device)
+                loss[tensor2 == 0] = 0
+                loss = torch.mean(loss)
+                loss.backward()
+            # 使用GradScaler来缩放损失以避免梯度下溢
+            # scaler.scale(loss).backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), int(1e2))
+                optimizer.step()
+            # 更新模型权重
+            # scaler.step(optimizer)
+            # scaler.update()  # 更新scaler的缩放比例
+                optimizer.zero_grad()
         running_loss += loss.item()
-    #     final = softmax(logits)[..., 1:-1]
-    #     final = final.argmax(dim=-1) + 1
-    #     pred_num = (labels != PAD_TOKEN_ID).sum(dim=-1)
-    #     correct_num = ((labels != PAD_TOKEN_ID) * (final == labels)).sum(dim=-1)
-    #     cum_acc += torch.true_divide(correct_num, pred_num).mean().item()
     epoch_loss = running_loss / index
-    # epoch_acc = 100 * cum_acc / index
     epoch_loss = get_reduced(epoch_loss, local_rank, 0, world_size)
-    # epoch_acc = get_reduced(epoch_acc, local_rank, 0, world_size)
+    # cleanup()
     if is_master:
         print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
+        with open("/home/share/huadjyin/home/fengzhixin/scf/scf/m0926.txt", "a") as file:
+            file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.9f}  ==')
+            file.write("\n")  # 追加一个换行符
     dist.barrier()
-    # print(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}   ==')
-    # 打开文件，模式为 'w'（写模式）
-    with open("/home/share/huadjyin/home/fengzhixin/scf/scf/q.txt", "a") as file:
-        file.write(f'    ==  Epoch: {i} | Training Loss: {epoch_loss:.6f}  ==')
-        file.write("\n")  # 追加一个换行符
-    print(1)
     scheduler.step()
-    print(2)
 
-    # if i % 1 == 0:
-    #     model.eval()
-    #     running_loss = 0.0
-    #     running_error = 0.0
-    #     predictions = []
-    #     truths = []
-    #     with torch.no_grad():
-    #         for index, data in enumerate(val_loader):
-    #             index += 1
-    #             data = data.to(device)
-    #             data, labels = data_mask(data)
-    #             logits = model(data)
-    #             loss = loss_fn(logits.transpose(1, 2), labels)
-    #             running_loss += loss.item()
-    #             softmax = nn.Softmax(dim=-1)
-    #             final = softmax(logits)[..., 1:-1]
-    #             final = final.argmax(dim=-1) + 1
-    #             predictions.append(final)
-    #             truths.append(labels)
-    #         del data, labels, logits, final
-    #         # gather
-    #         predictions = distributed_concat(torch.cat(predictions, dim=0), len(val_sampler.dataset), world_size)
-    #         truths = distributed_concat(torch.cat(truths, dim=0), len(val_sampler.dataset), world_size)
-    #         correct_num = ((truths != PAD_TOKEN_ID) * (predictions == truths)).sum(dim=-1)[0].item()
-    #         val_num = (truths != PAD_TOKEN_ID).sum(dim=-1)[0].item()
-    #         val_loss = running_loss / index
-    #         val_loss = get_reduced(val_loss, local_rank, 0, world_size)
-    #     if is_master:
-    #         val_acc = 100 * correct_num / val_num
-    #         print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f} | Accuracy: {val_acc:6.4f}%  ==')
-    # del predictions, truths
+    if i % 1 == 0:
+        model.eval()
+        dist.barrier()
+        running_loss = 0.0
+
+        with torch.no_grad():
+            for index, data in enumerate(val_loader):
+                index += 1
+                data = data.numpy()
+                ts_matrix,unmasked_only_matrix,mask_positions,masked_matrix,_, encoder_position_gene_ids = get_unmasked_only_matrix(data)
+                data = torch.from_numpy(unmasked_only_matrix).to(device)
+                mask_positions = torch.from_numpy(mask_positions).to(device)
+                full = torch.from_numpy(masked_matrix).to(device)
+                encoder_position_gene_ids = torch.from_numpy(encoder_position_gene_ids).to(device)
+
+                logits = model(data,full,mask_positions,encoder_position_gene_ids)
+                logits = torch.squeeze(logits)
+                print('shape1',logits.shape)
+                print('shape2',torch.from_numpy(ts_matrix).shape)
+                loss = mse_loss(logits,torch.from_numpy(ts_matrix).to(device)) / GRADIENT_ACCUMULATION
+                tensor = mask_positions.to(device)
+                loss.to(device)
+                loss = loss * tensor
+                tensor2 = mask_positions.to(device)
+                loss[tensor2 == 0] = 0
+                loss = torch.mean(loss)
+                running_loss += loss.item()
+            # gather
+            val_loss = running_loss / index
+            val_loss = get_reduced(val_loss, local_rank, 0, world_size)
+        if is_master:
+            print(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.6f} ')
+            with open("/home/share/huadjyin/home/fengzhixin/scf/scf/m0926.txt", "a") as file:
+                file.write(f'    ==  Epoch: {i} | Validation Loss: {val_loss:.9f} ')
+                file.write("\n")  # 追加一个换行符
 
     # if is_master:
     #     save_ckpt(i, model, optimizer, scheduler, epoch_loss, model_name, ckpt_dir)

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from scModel import AutoDiscretizationEmbedding2
 from torch import nn
 from utils import detail
+import h5py
 
 T_threshold = 1000
 
@@ -121,7 +122,7 @@ def random_mask_with_position(matrix, mask_ratio, pad_value, mask_value):
     if mask_ratio < 0 or mask_ratio > 1:
         raise ValueError("mask_ratio should be between 0 and 1")
     
-    condition2 = (matrix != 0) 
+    # condition2 = (matrix != 0) 
 
     # 复制矩阵以避免修改原始数据
     masked_matrix = matrix.copy()
@@ -223,7 +224,7 @@ def random_mask_with_position(matrix, mask_ratio, pad_value, mask_value):
     encoder_position_gene_ids = np.array(padded_pos_vectors)
     # print(unmasked_only_matrix)
 
-    return unmasked_only_matrix, mask_positions, masked_matrix, condition2, encoder_position_gene_ids       
+    return unmasked_only_matrix, mask_positions, masked_matrix, encoder_position_gene_ids       
 
 
 
@@ -268,9 +269,10 @@ def get_unmasked_only_matrix(data):
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
     gexpr_feature = pd.DataFrame(adata.X,index=adata.obs_names,columns=adata.var_names)
+    del adata
     # print('gexpr_feature\n',gexpr_feature)
-    tmp = []
-    for i in tqdm(range(gexpr_feature.shape[0])):
+    tmp1 = []
+    for i in range(gexpr_feature.shape[0]):
         # 用totalcount = gexpr_feature.iloc[i,:].sum()计算T，无法计算S
         # 直接对T、S进行log变换，不确定是否能准确表示表达量
         # 暂时直接用log(1+x)
@@ -279,20 +281,22 @@ def get_unmasked_only_matrix(data):
         tmpdata = (gexpr_feature.iloc[i,:]).tolist()
         pretrain_gene_x = torch.tensor(tmpdata+[totalcount,sourcecount]).unsqueeze(0)
         # data_gene_ids = torch.arange(gexpr_feature.shape[1]+2, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
-        tmp.append(pretrain_gene_x)
+        tmp1.append(pretrain_gene_x)
     # print('tmp\n',tmp)
 
-    tmp = torch.stack(tmp)
+    tmp2 = torch.stack(tmp1)
+    del tmp1
 
-    print('tmp.shape',tmp.shape)
-    tmp = np.array(tmp).squeeze(1)
-    print(tmp.shape)#(20, 22)
-    unmasked_only_matrix,mask_positions, masked_matrix, not_zero_position, encoder_position_gene_ids = random_mask_with_position(tmp, 0.3,tmp.shape[1]+1,tmp.shape[1]+2) #pad: +1;mask: +2
+    print('tmp2.shape',tmp2.shape)
+    tmp3 = np.array(tmp2).squeeze(1)
+    del tmp2
+    print(tmp3.shape)#(20, 22)
+    unmasked_only_matrix,mask_positions, masked_matrix, encoder_position_gene_ids = random_mask_with_position(tmp3, 0.3,tmp3.shape[1]+1,tmp3.shape[1]+2) #pad: +1;mask: +2
     # print(mask_positions)
     # print(masked_matrix)
     # print(unmasked_only_matrix)
     print('unmasked_only_matrix.shape',unmasked_only_matrix.shape)
-    return unmasked_only_matrix,mask_positions,masked_matrix,not_zero_position,encoder_position_gene_ids
+    return tmp3,unmasked_only_matrix,mask_positions,masked_matrix,None,encoder_position_gene_ids
 
 
 #?---------------得到unmasked_only_matrix-------------------
@@ -322,3 +326,38 @@ def get_emb(unmasked_only_matrix):
 
 # _,_,_,a=random_mask_with_position(matrix,0.3)
 # print(a)
+datapath = '/home/share/huadjyin/home/fengzhixin/scf/scf/output.h5ad'
+if __name__ == "__main__":
+    data1 = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad')
+    # data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
+    tmp = data1.X
+    del data1
+    
+    half_index = tmp.shape[0] // 4
+    first_half = tmp[:half_index, :]
+    # float16_csr = first_half.astype(np.float16)
+    # detail('float16_csr',float16_csr)
+    del tmp
+    # print(data.shape)
+    data = first_half.toarray()
+    del first_half
+    # data = data.X
+    # print(data.shape)
+    # 将其转换为稠密矩阵
+    # data = data.toarray()
+    print(data.shape)
+    _,unmasked_only_matrix,mask_positions,masked_matrix,_, encoder_position_gene_ids = get_unmasked_only_matrix(data)
+    with h5py.File(datapath, 'w') as f:
+        # 创建一个名为'unmasked_only_matrix'的组
+        group = f.create_group('unmasked_only_matrix')
+        group2 = f.create_group('mask_positions')
+        # group3 = f.create_group('not_zero_position')
+        group4 = f.create_group('masked_matrix')
+        group5 = f.create_group('encoder_position_gene_ids')
+        
+        # 将矩阵数据写入组
+        group.create_dataset('data', data=unmasked_only_matrix)
+        group2.create_dataset('data', data=mask_positions)
+        # group3.create_dataset('data', data=not_zero_position)
+        group4.create_dataset('data', data=masked_matrix)
+        group5.create_dataset('data', data=encoder_position_gene_ids)

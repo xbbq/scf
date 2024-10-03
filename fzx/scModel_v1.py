@@ -13,7 +13,7 @@ class AutoDiscretizationEmbedding2(nn.Module):
         self.max_seq_len = max_seq_len
         self.bin_num = bin_num[0]
         self.bin_alpha = bin_alpha[0]     #系数
-        print('-------------',type(self.bin_alpha))
+        # print('-------------',type(self.bin_alpha))
         
         #初始化两个全连接层mlp和mlp2，第一个层的输入维度为1，输出维度为分箱数量，第二个层的输入和输出维度都是分箱数量。
         #初始化LeakyReLU激活函数和Softmax归一化函数。
@@ -41,9 +41,9 @@ class AutoDiscretizationEmbedding2(nn.Module):
 
     def forward(self, x, output_weight=0):
 
-        print('type(x)',type(x))
-        print(x.shape)
-        print('self.pad_token_id',type(self.pad_token_id))
+        # print('type(x)',type(x))
+        # print(x.shape)
+        # print('self.pad_token_id',type(self.pad_token_id))
         #找出输入序列中掩码和填充标记的位置。
         x_mask_idx = (x==self.mask_token_id).nonzero()
         x_pad_idx = (x==self.pad_token_id).nonzero()
@@ -94,7 +94,7 @@ class AutoDiscretizationEmbedding2(nn.Module):
 
 def get_full_seq(a,b,c,pad_id):
     count = 0
-    print('padid',pad_id)
+    # print('padid',pad_id)
     for i in range(c.shape[0]):
         for j in range(a.shape[1]):
             if b[i][j].cpu() != torch.tensor(pad_id):
@@ -192,7 +192,7 @@ class scModel(nn.Module):
         full = full_seq
         print('--------decoder seq',full.shape)    
         # token and positional embedding
-        print('x.shape',x.shape)
+        # print('x.shape',x.shape)
         x = self.token_emb(torch.unsqueeze(x, 2), output_weight = 0)
         detail('x',x)
         # if output_attentions:
@@ -237,17 +237,6 @@ class scModel(nn.Module):
         
         return output
     
-# 定义模型参数
-input_dim = 10000  # 例如，词汇表大小
-encoder_dim = 512   # Encoder的嵌入维度
-decoder_dim = 512   # Decoder的嵌入维度
-output_dim = 100   # 输出维度，例如，下一个词的预测或分类任务的类别数
-num_encoder_layers = 12  # Transformer Encoder层数
-num_decoder_layers = 6    # Transformer Decoder层数
-num_heads = 8             # 注意力机制中的头数
-dropout = 0.1            # Dropout比率
-mask_positions = None
-not_zero_position = None
 
 # # 创建模型实例
 # model = scModel(input_dim, encoder_dim, decoder_dim, output_dim, num_encoder_layers, num_decoder_layers, 

@@ -13,6 +13,7 @@ import numpy as np
 import os
 import scipy.io  
 import h5py
+from utils import detail,CosineAnnealingWarmupRestarts,seed_all,get_reduced
 
 class SCDataset(Dataset):
     def __init__(self, data):
@@ -139,9 +140,12 @@ print(weighted_loss)
 #'/home/share/huadjyin/home/fengzhixin/scbert/data/panglao_human.h5ad'
 # data = sc.read_h5ad('data/panglao_10000.h5ad')
 
-for i in range(loss.shape[0]):
-    for j in range(loss.shape[1]):
-        print(loss[i][j])
+data = sc.read_h5ad('C:\\Users\\fengzhixin\\Documents\\scfoundation\\scfoundation\\fzx\\data\\panglao_10000.h5ad')
+# data = sc.read_h5ad('/home/share/huadjyin/home/fengzhixin/scf/scf/fzx/data/panglao_10000.h5ad')
+data = data.X
+data = data.toarray()
+detail('data',data)
+detail('data[0]',data[0])
 
 
 
